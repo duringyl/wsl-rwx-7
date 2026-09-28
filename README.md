@@ -59,10 +59,6 @@ npm run build
 
 构建产物为 `dist/index.js`，在 mcp.json 中用 `node dist/index.js` 启动（见下方配置示例）。
 
-### 方式三：npm（待发布）
-
-npm 包 `wsl-rwx-7` 暂未发布。发布后可通过 `npx -y wsl-rwx-7` 或 `npm install -g wsl-rwx-7` 使用。
-
 ---
 
 ## MCP 客户端配置
