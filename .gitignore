@@ -1,0 +1,8 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# Build output — published via npm "files" field, not committed
+# (uncomment the line below if you do NOT want to commit dist/)
+# dist/

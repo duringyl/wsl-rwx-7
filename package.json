@@ -1,0 +1,51 @@
+{
+  "name": "wsl-rwx-7",
+  "version": "1.0.0",
+  "description": "MCP server for WSL: read/write/execute (rwx) files with safe bash -s stdin escaping and login-shell env support",
+  "author": "duringyl",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "wsl-rwx-7": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "watch": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.13.2",
+    "diff": "^8.0.2",
+    "zod-to-json-schema": "^3.24.6"
+  },
+  "devDependencies": {
+    "@types/diff": "^5.0.9",
+    "@types/node": "^22",
+    "typescript": "^5.3.3"
+  },
+  "main": "dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/duringyl/wsl-rwx-7.git"
+  },
+  "keywords": [
+    "mcp",
+    "wsl",
+    "wsl2",
+    "filesystem",
+    "rwx",
+    "bash",
+    "model-context-protocol",
+    "mcp-server"
+  ],
+  "bugs": {
+    "url": "https://github.com/duringyl/wsl-rwx-7/issues"
+  },
+  "homepage": "https://github.com/duringyl/wsl-rwx-7#readme",
+  "engines": {
+    "node": ">=18"
+  }
+}
