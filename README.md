@@ -30,19 +30,25 @@
 
 > **注意**：本 MCP 服务器运行在 **Windows** 端，但它操作的是 WSL 内的文件系统。因此白名单目录参数（如 `/home/youruser/your/project`）必须是 **WSL 内的 Linux 路径**，而非 Windows 路径。运行参数（`--distro`、白名单目录等）在下方 [MCP 客户端配置](#mcp-客户端配置) 中设置。
 
-### 通过 npx（推荐，无需单独安装）
+### 方式一：npx 直接从 GitHub 运行（推荐）
 
-无需提前安装，直接在 mcp.json 中配置 `npx -y wsl-rwx-7`，npx 会自动下载并运行。
+无需克隆或安装，npx 会直接从 GitHub 拉取并运行：
 
-### 通过 npm 全局安装
-
-```bash
-npm install -g wsl-rwx-7
+```json
+{
+  "mcpServers": {
+    "wsl-rwx-7": {
+      "command": "npx",
+      "args": ["-y", "github:duringyl/wsl-rwx-7", "--distro=Ubuntu-24.04", "/home/user/project"],
+      "transport": "stdio"
+    }
+  }
+}
 ```
 
-安装完成后，在 mcp.json 中配置 `wsl-rwx-7` 命令即可。
+> 首次运行时 npx 会自动从 GitHub 下载源码并构建，请耐心等待。
 
-### 从源码构建
+### 方式二：克隆源码构建
 
 ```bash
 git clone https://github.com/duringyl/wsl-rwx-7.git
@@ -51,7 +57,11 @@ npm install
 npm run build
 ```
 
-构建产物为 `dist/index.js`，在 mcp.json 中用 `node dist/index.js` 启动。
+构建产物为 `dist/index.js`，在 mcp.json 中用 `node dist/index.js` 启动（见下方配置示例）。
+
+### 方式三：npm（待发布）
+
+npm 包 `wsl-rwx-7` 暂未发布。发布后可通过 `npx -y wsl-rwx-7` 或 `npm install -g wsl-rwx-7` 使用。
 
 ---
 
@@ -66,7 +76,7 @@ npm run build
       "command": "npx",
       "args": [
         "-y",
-        "wsl-rwx-7",
+        "github:duringyl/wsl-rwx-7",
         "--distro=Ubuntu-24.04",
         "/home/youruser/your/project"
       ],
