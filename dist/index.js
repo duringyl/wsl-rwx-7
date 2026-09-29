@@ -6,8 +6,96 @@ import { spawn } from 'child_process';
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { createTwoFilesPatch } from 'diff';
-// Command line argument parsing
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+// Command line argument parsing（提前到日志模块之前，因为日志模块需要 args 解析 --log-dir）
 const args = process.argv.slice(2);
+// === 日志模块 ===
+// 每次启动生成独立日志文件，便于排查瞬时无响应问题
+// 日志目录默认 ~/.wsl-rwx-7/logs/，可用 --log-dir= 覆盖
+// 文件名格式：wsl-rwx-7-YYYYMMDD-HHmmss-sss.log
+// 注意：MCP 协议用 stdout 传输 JSON-RPC，日志只写文件 + stderr，绝不污染 stdout
+function getLogDir() {
+    const logDirArg = args.find(arg => arg.startsWith('--log-dir='));
+    const logDir = logDirArg ? logDirArg.split('=')[1] : path.join(os.homedir(), '.wsl-rwx-7', 'logs');
+    try {
+        fs.mkdirSync(logDir, { recursive: true });
+    }
+    catch (e) {
+        // 创建失败则降级到临时目录
+        const fallback = path.join(os.tmpdir(), 'wsl-rwx-7-logs');
+        try {
+            fs.mkdirSync(fallback, { recursive: true });
+        }
+        catch { }
+        return fallback;
+    }
+    return logDir;
+}
+function formatTimestamp(d) {
+    const pad = (n, len = 2) => String(n).padStart(len, '0');
+    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-${pad(d.getMilliseconds(), 3)}`;
+}
+const LOG_DIR = getLogDir();
+const SESSION_START = new Date();
+const LOG_FILE = path.join(LOG_DIR, `wsl-rwx-7-${formatTimestamp(SESSION_START)}.log`);
+const SESSION_ID = LOG_FILE.slice(-28, -4); // 用于进程内标识
+let logStream = null;
+try {
+    logStream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
+}
+catch (e) {
+    // 极端情况：连文件都创建不了，退化到只 stderr
+}
+function log(level, msg, data) {
+    const ts = new Date().toISOString();
+    const line = `[${ts}] [${level}] [${SESSION_ID}] ${msg}${data !== undefined ? ' ' + JSON.stringify(data) : ''}\n`;
+    // 写文件
+    try {
+        logStream?.write(line);
+    }
+    catch { }
+    // 写 stderr（不污染 stdout）
+    process.stderr.write(line);
+}
+// 进程退出钩子：确保日志落盘
+process.on('exit', () => {
+    log('INFO', 'process exit', { pid: process.pid, uptime: process.uptime() });
+    try {
+        logStream?.end();
+    }
+    catch { }
+});
+process.on('SIGINT', () => {
+    log('WARN', 'received SIGINT', { pid: process.pid });
+    try {
+        logStream?.end();
+    }
+    catch { }
+    process.exit(130);
+});
+process.on('SIGTERM', () => {
+    log('WARN', 'received SIGTERM', { pid: process.pid });
+    try {
+        logStream?.end();
+    }
+    catch { }
+    process.exit(143);
+});
+process.on('uncaughtException', (err) => {
+    log('ERROR', 'uncaughtException', { name: err.name, message: err.message, stack: err.stack });
+    try {
+        logStream?.end();
+    }
+    catch { }
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+    log('ERROR', 'unhandledRejection', { reason: reason instanceof Error ? { message: reason.message, stack: reason.stack } : String(reason) });
+});
+log('INFO', 'session started', { pid: process.pid, logFile: LOG_FILE, args: process.argv.slice(2) });
+// Command line argument parsing（续）
 const distroArg = args.find(arg => arg.startsWith('--distro='));
 let allowedDistro = distroArg ? distroArg.split('=')[1] : null;
 const pathArgs = args.filter(arg => !arg.startsWith('--'));
@@ -930,6 +1018,7 @@ async function wslConvertPath(inputPath, direction = 'auto') {
 }
 // Tool handlers
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+    log('INFO', 'list_tools requested');
     return {
         tools: [
             {
@@ -1081,8 +1170,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     };
 });
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    const callStart = Date.now();
+    // 记录参数摘要（避免完整路径/内容泄露，只记前 200 字符）
+    const argsSummary = args ? JSON.stringify(args).slice(0, 200) : '(none)';
+    log('INFO', `tool call start: ${name}`, { args: argsSummary });
     try {
-        const { name, arguments: args } = request.params;
         switch (name) {
             case "read_file": {
                 const parsed = ReadFileArgsSchema.safeParse(args);
@@ -1388,9 +1481,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             default:
                 throw new Error(`Unknown tool: ${name}`);
         }
+        const elapsed = Date.now() - callStart;
+        log('INFO', `tool call end: ${name}`, { elapsed_ms: elapsed, ok: true });
+        // 返回值在上面的各个 case 中已 return，这里不会执行到
+        return undefined;
     }
     catch (error) {
+        const elapsed = Date.now() - callStart;
         const errorMessage = error instanceof Error ? error.message : String(error);
+        log('ERROR', `tool call end: ${name}`, { elapsed_ms: elapsed, ok: false, error: errorMessage });
         return {
             content: [{ type: "text", text: `Error: ${errorMessage}` }],
             isError: true,
@@ -1399,14 +1498,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 // Start server
 async function runServer() {
+    log('INFO', 'runServer: initializing WSL and directories');
     await initializeWslAndDirectories();
+    log('INFO', 'runServer: WSL initialized', { distro: allowedDistro, allowedDirectories });
     const transport = new StdioServerTransport();
     await server.connect(transport);
+    log('INFO', 'runServer: server connected on stdio', { distro: allowedDistro, allowedDirectories });
     console.error("wsl-rwx-7 MCP server running on stdio");
     console.error(`Using WSL distribution: ${allowedDistro}`);
     console.error("Allowed directories:", allowedDirectories);
 }
 runServer().catch((error) => {
+    log('ERROR', 'runServer: fatal error', { message: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
     console.error("Fatal error running server:", error);
     process.exit(1);
 });
